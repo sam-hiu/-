@@ -1,0 +1,176 @@
+#include <RF24Network.h>//使用RF24.h需要该头文件
+#include <RF24.h>//使用RF24.h需要该头文件
+#include <SPI.h>//串行外围接口头文件
+#include <EEPROM.h>
+uint16_t sid=003;//两个字节 sid为安全标识符
+uint16_t nid=001;//两个字节 nid为网络标识符
+// nRF24L01(+) radio attached using Getting Started board 无线模块NRF4L01接入使用
+RF24 radio(9,10);
+// Network uses that radio
+RF24Network network(radio);
+// Address of our node
+const uint16_t this_node = 0;
+// Address of the other node
+const uint16_t other_node = 1;
+// Structure of our payload
+struct payload_t
+{
+unsigned long ms;
+unsigned long data;
+char getchar[20];
+};
+int pinIn=4;
+int pinOut=5;
+int val;//定义变量val
+int state=0;
+void setup(void)
+{
+Serial.begin(9600);
+Serial.println("RF24Network/RX_ChaZuo");
+SPI.begin();
+radio.begin();
+network.begin(/*channel*/ sid, /*node address*/ this_node);
+pinMode(pinOut,OUTPUT);//定义小灯接口为输出接口
+pinMode(pinIn,INPUT);//定义按键接口为输入接口
+state = EEPROM.read(0);
+Serial.println("setup success");
+}
+void loop(void)
+{
+// Pump the network regularly
+network.update();
+// Is there anything ready for us?
+while ( network.available() )
+{
+// If so, grab it and print it out
+RF24NetworkHeader header;
+payload_t payload;
+memset(payload.getchar, 0, 20);
+network.read(header,&payload,sizeof(payload));
+Serial.print("Received packet #");
+Serial.print(payload.data);
+Serial.print(" at ");
+Serial.print(payload.ms);
+Serial.print(" getchar ");
+Serial.println(payload.getchar);
+char body[17]={0};
+get_html_body(payload.getchar,body);
+Serial.println(body);
+int s=get_sid(body);
+int n=get_nid(body);
+int d=get_data(body);
+if(  s==sid && n==nid )
+{
+if( d==1 )
+{
+state=1;
+EEPROM.write(0, state);
+}
+if( d==0 )
+{
+state=0;
+EEPROM.write(0, state);
+}
+}
+}
+val=digitalRead(pinIn);//读取数字4 口电平值赋给val
+if(val==HIGH)//检测按键是否按下，按键按下时小灯亮起
+{
+if(state==0)
+{
+digitalWrite(pinOut,HIGH);
+state=1;
+EEPROM.write(0, state);
+delay(2000);
+}
+else
+{
+digitalWrite(pinOut,LOW);
+state=0;
+EEPROM.write(0, state);
+delay(2000);
+}
+}
+//ON OFF SET
+if(state==1)
+{
+digitalWrite(pinOut,HIGH);
+}
+else
+{
+digitalWrite(pinOut,LOW);
+}
+delay(10);
+}
+// vim:ai:cin:sts=2 sw=2 ft=cpp
+void get_html_body(char *p,char *s){
+char rechar[17]={0};
+int bufi=0;
+bool isend=false;
+int charnum=0;
+for(bufi=0;bufi<strlen(p);bufi++){
+//Serial.print(p[bufi]);
+if(p[bufi]=='{'){
+isend=true;
+}
+if(p[bufi]=='}' && isend==true){
+isend=false;
+rechar[charnum]=p[bufi];
+break;
+}
+if(isend){
+if(charnum<16){
+rechar[charnum]=p[bufi];//Serial.print(rechar[charnum]);
+charnum++;
+}
+}
+}
+Serial.println("");
+//memcpy(s,rechar,17);
+sprintf(s,"%s",rechar);
+}
+int get_sid(char *buff){
+if( strstr(buff,"{ck") && strstr(buff,"}") && strlen(buff)>10)
+{
+char charSid[4]={0};
+memcpy(charSid,buff+3,3);
+Serial.println(charSid);
+int intSid=atoi(charSid);
+Serial.println(intSid);
+return intSid;
+}
+else
+{
+return 0;
+}
+}
+int get_nid(char *buff){
+if( strstr(buff,"{ck") && strstr(buff,"}") && strlen(buff)>10)
+{
+char charNid[4]={0};
+memcpy(charNid,buff+6,3);
+Serial.println(charNid);
+int intNid=atoi(charNid);
+Serial.println(intNid);
+return intNid;
+}
+else
+{
+return 0;
+}
+}
+int get_data(char *buff){
+if( strstr(buff,"{ck") && strstr(buff,"}") && strlen(buff)>10)
+{
+char charData[4]={0};
+memcpy(charData,buff+9,1);
+Serial.println(charData);
+int intData=atoi(charData);
+Serial.println(intData);
+return intData;
+}
+else
+{
+return 0;
+}
+}
